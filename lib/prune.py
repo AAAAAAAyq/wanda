@@ -79,6 +79,7 @@ def prepare_calibration_input(model, dataloader, device):
             cache['attention_mask'] = kwargs['attention_mask']
             cache['position_ids'] = kwargs['position_ids']
             raise ValueError
+        
     layers[0] = Catcher(layers[0])
     for batch in dataloader:
         try:
@@ -115,19 +116,18 @@ def prune_magnitude(args, model, tokenizer, device=torch.device("cuda:0"), prune
             if prune_n != 0:
                 W_mask = (torch.zeros_like(W)==1)
                 for ii in range(W_metric.shape[1]):
-                    if ii % prune_m == 0:
-                        tmp = W_metric[:,ii:(ii+prune_m)].float()
-                        W_mask.scatter_(1,ii+torch.topk(tmp, prune_n,dim=1, largest=False)[1], True)
-            else:
+                    if ii % prune_m == 0:   # 行批量计算, 列按照prune_m分块
+                        tmp = W_metric[:,ii:(ii+prune_m)].float()   # 一次计算prune_m列
+                        W_mask.scatter_(1,ii+torch.topk(tmp, prune_n,dim=1, largest=False)[1], True)    # 按照prune_n个最小值进行mask
+            else:   # 每个weight矩阵按照sparsity_ratio进行剪枝
                 thresh = torch.sort(W_metric.flatten().cuda())[0][int(W.numel()*args.sparsity_ratio)].cpu()
                 W_mask = (W_metric<=thresh)
 
-            W[W_mask] = 0
+            W[W_mask] = 0   # W_mask为True的位置置0
 
 def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
     use_cache = model.config.use_cache 
     model.config.use_cache = False 
-    import pdb;pdb.set_trace()
     print("loading calibdation data")
     dataloader, _ = get_loaders("c4",nsamples=args.nsamples,seed=args.seed,seqlen=2048,tokenizer=tokenizer)
     print("dataset loading complete")
@@ -161,6 +161,8 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
         for h in handles:
             h.remove()
 
+        wrapped_layers[name].free()
+
         for name in subset:
             print(f"pruning layer {i} name {name}")
             W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
@@ -175,13 +177,13 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
             else:
                 sort_res = torch.sort(W_metric, dim=-1, stable=True)
 
-                if args.use_variant:
+                if args.use_variant:    # 二分查找剪枝
                     # wanda variant 
                     tmp_metric = torch.cumsum(sort_res[0], dim=1)
                     sum_before = W_metric.sum(dim=1)
 
                     alpha = 0.4
-                    alpha_hist = [0., 0.8]
+                    alpha_hist = [0., 0.8]  # [lower, upper]
                     W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
                     while (torch.abs(cur_sparsity - args.sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
                         if cur_sparsity > args.sparsity_ratio:
@@ -204,7 +206,9 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
         for j in range(args.nsamples):
             with torch.no_grad():
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
-        inps, outs = outs, inps
+        inps, outs = outs, inps # 将剪枝后的输出作为下一层的输入
+        
+        torch.cuda.empty_cache()
 
     model.config.use_cache = use_cache 
     torch.cuda.empty_cache()

@@ -5,7 +5,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from importlib.metadata import version
 
-from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, check_sparsity, find_layers
+from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, check_sparsity
 from lib.eval import eval_ppl
 
 print('torch', version('torch'))
@@ -27,15 +27,15 @@ def get_llm(model, cache_dir="llm_weights"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, help='LLaMA model')
+    parser.add_argument('--model', type=str, help='LLaMA model')    # Huggingface model name
     parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration samples.')
     parser.add_argument('--sparsity_ratio', type=float, default=0, help='Sparsity level')
     parser.add_argument("--sparsity_type", type=str, choices=["unstructured", "4:8", "2:4"])
     parser.add_argument("--prune_method", type=str, choices=["magnitude", "wanda", "sparsegpt"])
     parser.add_argument("--cache_dir", default="llm_weights", type=str )
-    parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")
-    parser.add_argument('--save', type=str, default=None, help='Path to save results.')
+    parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")    # TODO:what is this?
+    parser.add_argument('--save', type=str, default=None, help='Path to save results.') # save the log file
     parser.add_argument('--save_model', type=str, default=None, help='Path to save the pruned model.')
     args = parser.parse_args()
 
@@ -63,7 +63,7 @@ def main():
     if args.sparsity_ratio != 0:
         print("pruning starts")
         if args.prune_method == "wanda":
-            prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+            prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)   # the core algorithm!!
         elif args.prune_method == "magnitude":
             prune_magnitude(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "sparsegpt":
@@ -71,11 +71,11 @@ def main():
 
     ################################################################
     print("*"*30)
-    sparsity_ratio = check_sparsity(model)
+    sparsity_ratio = check_sparsity(model)  # check the sparsity of the model
     print(f"sparsity sanity check {sparsity_ratio:.4f}")
     print("*"*30)
     ################################################################
-    ppl = eval_ppl(model, tokenizer, device)
+    ppl = eval_ppl(model, tokenizer, device)    # evaluate the model
     print(f"ppl on wikitext {ppl}")
 
     if not os.path.exists(args.save):

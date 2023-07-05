@@ -9,7 +9,7 @@ from .data import get_loaders
 # Function to evaluate perplexity (ppl) on a specified model and tokenizer
 def eval_ppl(model, tokenizer, device=torch.device("cuda:0")):
     # Set dataset
-    dataset = "wikitext2"
+    dataset = "wikitext2"   # 维基百科文章中提取的句子组成的数据集
 
     # Print status
     print(f"evaluating on {dataset}")
@@ -21,6 +21,7 @@ def eval_ppl(model, tokenizer, device=torch.device("cuda:0")):
 
     # Evaluate ppl in no grad context to avoid updating the model
     with torch.no_grad():
+        # 困惑度衡量的是语言模型预测一个样本的困难程度：困惑度越低，代表模型对样本的预测越准确。
         ppl = eval_ppl_wikitext(model, testloader, 1, device)
     return ppl 
 
@@ -49,24 +50,24 @@ def eval_ppl_wikitext(model, testenc, bs=1, device=None):
         inputs = inputs.reshape(j-i, model.seqlen)
 
         # Forward pass through the model
-        lm_logits = model(inputs).logits
+        lm_logits = model(inputs).logits    
 
         # Shift logits and labels for next token prediction
-        shift_logits = lm_logits[:, :-1, :].contiguous()
-        shift_labels = inputs[:, 1:]
+        shift_logits = lm_logits[:, :-1, :].contiguous()    # [cat, sat, on, ???] -> [cat, sat, on]
+        shift_labels = inputs[:, 1:]    # [The, cat, sat, on] -> [cat, sat, on]
 
         # Compute loss
         loss_fct = nn.CrossEntropyLoss()
         loss = loss_fct(shift_logits.reshape(-1, shift_logits.size(-1)), shift_labels.reshape(-1))
 
         # Calculate negative log likelihood
-        neg_log_likelihood = loss.float() * model.seqlen * (j-i)
+        neg_log_likelihood = loss.float() * model.seqlen * (j-i)    # nll = loss * seqlen * batch_size
 
         # Append to list of negative log likelihoods
         nlls.append(neg_log_likelihood)
 
     # Compute perplexity
-    ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
+    ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))    # ppl = exp(∑(nlls) / (nsamples * model.seqlen))
 
     # Empty CUDA cache to save memory
     torch.cuda.empty_cache()
