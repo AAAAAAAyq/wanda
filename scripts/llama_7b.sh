@@ -3,14 +3,14 @@
 # Set common variables
 model="decapoda-research/llama-7b-hf"
 sparsity_ratio=0.5
-cuda_device=0
+cuda_device=2
 
 # Set CUDA device visibility
 export CUDA_VISIBLE_DEVICES=$cuda_device
 
 # Define function to run python command
 run_python_command () {
-    python main.py \
+    /data/anyongqi/miniconda3/envs/prune_llm/bin/python3.9 main.py \
     --model $model \
     --prune_method $1 \
     --sparsity_ratio $sparsity_ratio \
