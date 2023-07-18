@@ -6,3 +6,4 @@ llm_weights/
 datasets/
 out/
 figures/
+alpaca-lora/
