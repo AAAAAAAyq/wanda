@@ -48,7 +48,6 @@ def eval_ppl_wikitext(model, testenc, bs=1, device=None):
         # Prepare inputs and move to device
         inputs = testenc[:,(i * model.seqlen):(j * model.seqlen)].to(device)
         inputs = inputs.reshape(j-i, model.seqlen)
-
         # Forward pass through the model
         lm_logits = model(inputs).logits    
 

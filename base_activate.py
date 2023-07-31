@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 seed = 0
 nsamples = 128
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # Setting seeds for reproducibility
 np.random.seed(seed)
@@ -31,7 +31,7 @@ def get_llm(model, cache_dir="llm_weights"):
         low_cpu_mem_usage=True, 
         device_map="auto"
     )
-    model.seqlen = 2048
+    model.seqlen = 128
     return model
 
 print(f"loading llm model {model_name}")
@@ -45,7 +45,7 @@ device = torch.device("cuda:0")
 data_type = "wikitext2"
 model.config.use_cache = False 
 print("loading calibdation data")
-dataloader, _ = get_loaders(data_type, nsamples=nsamples, seed=seed, seqlen=2048, tokenizer=tokenizer)
+dataloader, _ = get_loaders(data_type, nsamples=nsamples, seed=seed, seqlen=model.seqlen, tokenizer=tokenizer)
 print("dataset loading complete")
 ##########################################################
 
@@ -106,11 +106,12 @@ def draw_loss_each_channel(data, module, original_shape=(2048, 4096), row_num=8,
     plt.savefig(f"figures/skill_l2_loss/L2_loss_l{layer_id}_{module}_llama_7b.png")
     plt.show()
 
-def draw_heatmap(data, module, mode, original_shape=(2048, 4096), row_num=8, col_num=4):
-    fig, axs = plt.subplots(row_num, col_num, figsize=(20, 15))
+#%%
+def draw_heatmap(data, fig_title, original_shape=(2048, 4096), row_num=8, col_num=4):
+    fig, axs = plt.subplots(row_num, col_num, figsize=(20, 20))
 
     # Calculate the step size for original data
-    y_step_size = original_shape[0] // 4
+    y_step_size = original_shape[0] // 8
     x_step_size = original_shape[1] // 8
 
     # Generate the labels for original data
@@ -118,106 +119,33 @@ def draw_heatmap(data, module, mode, original_shape=(2048, 4096), row_num=8, col
     x_labels = list(range(0, original_shape[1] + 1, x_step_size))
 
     for i, ax in enumerate(axs.flatten()):
-        if mode == 'abs':
-            sns.heatmap(data[i].abs().cpu().numpy(), ax=ax, cmap='RdBu', cbar=False, vmin=-6, vmax=6)
-        else:
-            sns.heatmap(data[i].cpu().numpy(), ax=ax, cmap='RdBu', cbar=False, vmin=-6, vmax=6)
-            
+        sns.heatmap(data[i].cpu().numpy(), ax=ax, cmap='RdBu', cbar=False, vmin=-0.1, vmax=0.1)  # , vmin=-0.5, vmax=0.5
+                
         # Set the labels for x and y axis
         ax.set_xticks(np.arange(0, data[i].shape[1]+1, data[i].shape[1] // 8))
         ax.set_xticklabels(x_labels)
-        ax.set_yticks(np.arange(0, data[i].shape[0]+1, data[i].shape[0] // 4))
+        ax.set_yticks(np.arange(0, data[i].shape[0]+1, data[i].shape[0] // 8))
         ax.set_yticklabels(y_labels)
-        if i == 0:
-            ax.title.set_text(f'Mean feature')
-        else:
-            ax.title.set_text(f'Sample {i} - mean')
-        # print(f'finish {i}')
+        
+        ax.set_xlabel("seqlen")
+        ax.set_ylabel("nsamples")
 
+    plt.title(fig_title)
+    
     plt.tight_layout()
-    plt.savefig(f"figures/skill/l{layer_id}_{module}_{mode}_llama_7b.png")
     plt.show()
 
-# def analysis_feature(data, logging, module):
-#     # 各层绝对值>6.0的元素数量统计
-#     element_counts = [(feature.abs() > abs_threshold).sum().item() for feature in data]
-#     # for i, count in enumerate(element_counts):
-#     #     logging.info(f"{module} - Layer {i+1}: {count} elements with absolute value > 6.0")
-#     # logging.info('-' * 80)
- 
-#     logging.info(f"{module} - Total: {sum(element_counts):,} elements with absolute value > 6.0")    
-#     indices_list = [torch.where(feature.abs() > abs_threshold) for feature in data]
-#     indices_list = [(indices[0].tolist(), indices[1].tolist()) for indices in indices_list]
-#     dim_indices_set = [set(indices[1]) for indices in indices_list]
-#     merged_dim_indices = [dim for dim_set in dim_indices_set for dim in dim_set]
-#     dim_counter = Counter(merged_dim_indices)
-#     # 各层绝对值>6.0的各dim出现层数统计
-#     # print(dim_counter)
-
-#     # Filter out dims that appear in more than 25% of the layers
-#     filtered_dims = [dim for dim, freq in dim_counter.items() if freq > len(data) * layer_ratio]
-
-#     # 各层绝对值>6.0,且dim影响层数超过25%的dim统计
-#     # print(filtered_dims)
-#     logging.info(f"{module} - Total: {' '.join(map(str, sorted(filtered_dims)))} dim_indices with absolute value > 6.0 and affected layers > 25%")
-
-#     seqlen_frequencies = [Counter(indices[1]) for indices in indices_list]
-#     # Filter out dim_indices that appear more than threshold times in each layer
-#     filtered_dim_indices = [[dim for dim, freq in counter.items() if freq > model.seqlen * seq_ratio] for counter in seqlen_frequencies]
-
-#     merged_dim_indices_2 = [dim for dim_set in filtered_dim_indices for dim in dim_set]
-#     dim_counter_2 = Counter(merged_dim_indices_2)
-#     # 各层绝对值>6.0且seqlen>6%的各dim出现层数统计
-#     # print(dim_counter_2)
-#     filtered_dims_2 = [dim for dim, freq in dim_counter_2.items() if freq > len(data) * layer_ratio]
-#     # 各层绝对值>6.0,且dim影响层数超过25%,且seqlen>6%的dim统计
-#     # print(filtered_dims_2)
-#     logging.info(f"{module} - Total: {' '.join(map(str, sorted(filtered_dims_2)))} dim_indices with absolute value > 6.0 and affected layers > 25% and affected seqlen > 6%")
-    
-#%%
 # Set up logging
-# logging.basicConfig(filename=f'figures/input_features/{data_type}_llama_7b_seed{seed}.txt', level=logging.INFO)
-from lib.eval import eval_ppl
 module = "down_proj" # "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj" 
-# mode = 'mag'
-# layer_id = 31
-for layer_id in range(1):
-    features_list = get_input_features(model, dataloader, module, layer_id)
-    mean_features = torch.cat(features_list, dim=0).mean(dim=0)
-    diff_features = [feature[0] - mean_features for feature in features_list]
-    l2_loss = torch.stack([torch.sqrt(torch.sum(feature**2, dim=0)) for feature in diff_features]).mean(dim=0)   # [in_dim]
-    thresh = torch.sort(l2_loss)[0][int(l2_loss.numel()*0.5)].cpu()
-    W_mask = (l2_loss>thresh)   # 1表示保留
-    
-    # ppl = eval_ppl(model, tokenizer, device)
-    # print(f"before pruned ppl on wikitext {ppl}")
-    
-    model.model.layers[0].mlp.up_proj.weight.data = model.model.layers[0].mlp.up_proj.weight.data[torch.where(W_mask)[0]]
-    model.model.layers[0].mlp.gate_proj.weight.data = model.model.layers[0].mlp.gate_proj.weight.data[torch.where(W_mask)[0]]
-    output_weight = model.model.layers[0].mlp.down_proj.weight.data
-    output_bias = ((mean_features * ~W_mask) @ output_weight.T).mean(dim=0)
-    output_weight = output_weight[:, torch.where(W_mask)[0]]
-    shape = model.model.layers[0].mlp.down_proj.weight.data.shape
-    model.model.layers[0].mlp.down_proj = torch.nn.Linear(in_features=shape[1], out_features=shape[0], bias=True).to(device)
-    model.model.layers[0].mlp.down_proj.weight.data = output_weight
-    model.model.layers[0].mlp.down_proj.bias.data = output_bias
-    torch.cuda.empty_cache()
-    
-    
-    ppl = eval_ppl(model, tokenizer, device)
-    print(f"pruned ppl on wikitext {ppl}")
-    import pdb;pdb.set_trace()
-    # draw_loss_each_channel(diff_features, module, tuple(mean_features.shape), row_num=3, col_num=5)
-        
-        # diff_features = [mean_features] + diff_features
-        # # Assuming features_list is a list of 2D tensors
-        # pooled_features_list = [sign_preserving_max_pooling(feature) for feature in diff_features]
+layer_id = 5
+offset = 1520
+num_channel = 16
+features_list = get_input_features(model, dataloader, module, layer_id)
+channel_feature = torch.cat(features_list)[:,:,offset:num_channel+offset]
+channel_features_list = [channel_feature[:,:,i] for i in range(num_channel)]
+title = f"layer={layer_id} module={module} offset={offset}"
+draw_heatmap(channel_features_list, title, tuple(channel_features_list[0].shape), row_num=4, col_num=4)
 
-        # # draw_heatmap(pooled_features_list, module, 'abs', tuple(mean_features.shape), row_num=4, col_num=4)
-        # draw_heatmap(pooled_features_list, module, 'mag', tuple(mean_features.shape), row_num=4, col_num=4)
-
-        # analysis_feature(features_list, logging, module)
     # print(f'finish layer{layer_id}-{module}')
-    # logging.info('=' * 80)
 
 # %%

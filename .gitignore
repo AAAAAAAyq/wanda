@@ -7,3 +7,4 @@ datasets/
 out/
 figures/
 alpaca-lora/
+lm-evaluation-harness/

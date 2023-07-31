@@ -3,38 +3,44 @@
 # Set common variables
 model="decapoda-research/llama-7b-hf"
 # model="/data/anyongqi/wanda/llm_weights/mlp0.5_llama_7b"
-sparsity_ratio=0.418
-remove_heads=64
-cuda_device=$1
+# sparsity_ratio=0.75
+# remove_heads=4
+cuda_device=7
 
 # Set CUDA device visibility
 export CUDA_VISIBLE_DEVICES=$cuda_device
 
 # Define function to run python command
 run_python_command () {
-    /data/anyongqi/miniconda3/envs/prune_llm/bin/python3.9 main_old.py \
+    /data/anyongqi/miniconda3/envs/prune_llm/bin/python3.9 main.py \
     --model $model \
     --prune_method $1 \
-    --sparsity_ratio $sparsity_ratio \
-    --remove_heads $remove_heads \
+    --sparsity_ratio $4 \
+    --remove_heads $5 \
     --sparsity_type $2 \
     --save $3 \
     --mode per-out \
     --nsamples 1024 \
-    --save_model llm_weights/ns1024_seq128_rh${remove_heads}_mlp${sparsity_ratio}_llama_7b/
+    --save_model llm_weights/ns1024_seq128_rh${5}_mlp${4}_llama-7b/
 }
 
-# llama-7b with bias_unify pruning method
-echo "Running with unify pruning method"
-run_python_command "unify" "unstructured" "out/llama_7b/structured/unify_$sparsity_ratio/"
+# llama-7b with skill pruning method
+echo "Running with skill pruning method"
+run_python_command "skill" "structured" "out/llama-7b/structured/skill_mlp0.3/" 0.3 0     # 20%
+run_python_command "skill" "structured" "out/llama-7b/structured/skill_mlp0.375/" 0.375 0     # 25%
+run_python_command "skill" "structured" "out/llama-7b/structured/skill_mlp0.75/" 0.75 0    # 50%
+run_python_command "skill" "structured" "out/llama-7b/structured/skill_rh8_mlp0.625/" 0.625 8   # 50%
+run_python_command "skill" "structured" "out/llama-7b/structured/skill_rh6_mlp0.655/" 0.655 6   # 50%
+run_python_command "skill" "structured" "out/llama-7b/structured/skill_rh4_mlp0.686/" 0.686 4   # 50%
 
-# # llama-7b with wanda_sp pruning method
-# echo "Running with wanda_sp pruning method"
-# run_python_command "wanda_sp" "unstructured" "out/llama_7b/unstructured/wanda_sp_$sparsity_ratio/"
-
-# # llama-7b with skill pruning method
-# echo "Running with skill pruning method"
-# run_python_command "skill" "unstructured" "out/llama_7b/unstructured/skill_$sparsity_ratio/"
+# llama-7b with wanda_sp pruning method
+echo "Running with wanda_sp pruning method"
+run_python_command "wanda_sp" "structured" "out/llama-7b/structured/wanda_sp_mlp0.3/" 0.3 0     # 20%
+run_python_command "wanda_sp" "structured" "out/llama-7b/structured/wanda_sp_mlp0.375/" 0.375 0     # 25%
+run_python_command "wanda_sp" "structured" "out/llama-7b/structured/wanda_sp_mlp0.75/" 0.75 0    # 50%
+run_python_command "wanda_sp" "structured" "out/llama-7b/structured/wanda_sp_rh8_mlp0.625/" 0.625 8   # 50%
+run_python_command "wanda_sp" "structured" "out/llama-7b/structured/wanda_sp_rh6_mlp0.655/" 0.655 6   # 50%
+run_python_command "wanda_sp" "structured" "out/llama-7b/structured/wanda_sp_rh4_mlp0.686/" 0.686 4   # 50%
 
 # # llama-7b with wanda pruning method
 # echo "Running with wanda++ pruning method"

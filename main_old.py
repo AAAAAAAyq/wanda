@@ -5,7 +5,8 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from importlib.metadata import version
 
-from lib.prune import prune_wanda_sp, prune_bias, check_sparsity_sp
+from lib.prune_old import prune_taylor, prune_with_skill, prune_wanda, prune_magnitude, prune_sparsegpt, prune_weightedobs_v2,prune_wanda_sp,prune_bias_unify
+from lib.prune_old import check_sparsity, prune_wanda_plus, check_sparsity_skill
 from lib.eval import eval_ppl
 
 print('torch', version('torch'))
@@ -31,17 +32,23 @@ def main():
     parser.add_argument('--nsamples', type=int, default=2048, help='Number of calibration samples.')
     parser.add_argument('--sparsity_ratio', type=float, default=0, help='Sparsity level')
     parser.add_argument('--remove_heads', type=int, default=8, help='Remove num_heads')
-    parser.add_argument("--metrics", type=str)
-    parser.add_argument("--modes", type=str)
-    parser.add_argument("--prune_method", type=str, choices=["bias", "wanda_sp"])
+    parser.add_argument("--sparsity_type", type=str, choices=["structured", "unstructured", "4:8", "2:4"])
+    parser.add_argument("--mode", type=str, choices=["per-layer", "per-out"])
+    parser.add_argument("--prune_method", type=str, choices=["unify", "skill", "taylor", "magnitude", "wanda_sp", "wanda", "wanda++", "sparsegpt", "weightedobs"])
     parser.add_argument("--cache_dir", default="llm_weights", type=str)
-    parser.add_argument('--use_weight_update', action="store_true")
+    parser.add_argument('--use_variant', action="store_true", help="whether to use the wanda variant described in the appendix")    # TODO:what is this?
     parser.add_argument('--save', type=str, default=None, help='Path to save results.') # save the log file
     parser.add_argument('--save_model', type=str, default=None, help='Path to save the pruned model.')
     args = parser.parse_args()
     # Setting seeds for reproducibility
     np.random.seed(args.seed)
     torch.random.manual_seed(args.seed)
+
+    # Handling n:m sparsity
+    prune_n, prune_m = 0, 0
+    if args.sparsity_type != "unstructured" and args.sparsity_type != "structured":
+        assert args.sparsity_ratio == 0.5, "sparsity ratio must be 0.5 for structured N:M sparsity"
+        prune_n, prune_m = map(int, args.sparsity_type.split(":"))
 
     model_name = args.model.split("/")[-1]
     print(f"loading llm model {args.model}")
@@ -56,14 +63,32 @@ def main():
 
     if args.sparsity_ratio != 0:
         print("pruning starts")
-        if args.prune_method == "bias":
-            prune_bias(args, model, tokenizer, device)
+        if args.prune_method == "wanda":
+            prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)   # the core algorithm!!
+        elif args.prune_method == "skill":
+            prune_with_skill(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "wanda++":
+            prune_wanda_plus(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
         elif args.prune_method == "wanda_sp":
-            prune_wanda_sp(args, model, tokenizer, device)
+            prune_wanda_sp(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "unify":
+            prune_bias_unify(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "taylor":
+            prune_taylor(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+            exit()
+        elif args.prune_method == "magnitude":
+            prune_magnitude(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "sparsegpt":
+            prune_sparsegpt(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+        elif args.prune_method == "weightedobs":
+            prune_weightedobs_v2(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
 
     ################################################################
     print("*"*30)
-    sparsity_ratio = check_sparsity_sp(model)  # check the sparsity of the model
+    if args.prune_method in ["skill", "wanda_sp", "sparsegpt_sp", "unify"]:
+        sparsity_ratio = check_sparsity_skill(model)  # check the sparsity of the model
+    else:
+        sparsity_ratio = check_sparsity(model)  # check the sparsity of the model
     print(f"sparsity sanity check {sparsity_ratio:.4f}")
     print("*"*30)
     ################################################################
@@ -77,8 +102,17 @@ def main():
     with open(save_filepath, "w") as f:
         print("actual_sparsity\tppl", file=f, flush=True)
         print(f"{sparsity_ratio:.4f}\t{ppl:.4f}", file=f, flush=True)
+        
     
+    model.config.num_attention_heads = model.model.layers[0].self_attn.num_heads
+    model.config.intermediate_size = model.model.layers[0].mlp.up_proj.out_features
+    
+
     if args.save_model:
+        # torch.save({
+        #     'model': model,
+        #     'tokenizer': tokenizer,
+        # }, args.save_model)
         model.save_pretrained(args.save_model)
         tokenizer.save_pretrained(args.save_model)
 
